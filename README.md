@@ -1,3 +1,20 @@
+---
+name: ChatGPT + Enterprise data
+description: Chat with your data using OpenAI and Cognitive Search.
+languages:
+- python
+- typescript
+- bicep
+- azdeveloper
+products:
+- azure-openai
+- azure-cognitive-search
+- azure-app-service
+- azure
+page_type: sample
+urlFragment: azure-search-openai-demo
+---
+
 # ChatGPT + Enterprise data with Azure OpenAI and Cognitive Search
 
 ## Table of Contents
@@ -8,7 +25,7 @@
   - [Cost estimation](#cost-estimation)
   - [Project setup](#project-setup)
     - [GitHub Codespaces](#github-codespaces)
-    - [VS Code Remote Containers](#vs-code-remote-containers)
+    - [VS Code Dev Containers](#vs-code-dev-containers)
     - [Local environment](#local-environment)
   - [Deploying from scratch](#deploying-from-scratch)
   - [Deploying with existing Azure resources](#deploying-with-existing-azure-resources)
@@ -17,6 +34,8 @@
 - [Enabling optional features](#enabling-optional-features)
   - [Enabling Application Insights](#enabling-application-insights)
   - [Enabling authentication](#enabling-authentication)
+  - [Enabling login and document level access control](#enabling-login-and-document-level-access-control)
+  - [Enabling CORS for an alternate frontend](#enabling-cors-for-an-alternate-frontend)
 - [Using the app](#using-the-app)
 - [Running locally](#running-locally)
 - [Productionizing](#productionizing)
@@ -26,7 +45,7 @@
   - [Troubleshooting](#troubleshooting)
 
 [![Open in GitHub Codespaces](https://img.shields.io/static/v1?style=for-the-badge&label=GitHub+Codespaces&message=Open&color=brightgreen&logo=github)](https://github.com/codespaces/new?hide_repo_select=true&ref=main&repo=599293758&machine=standardLinux32gb&devcontainer_path=.devcontainer%2Fdevcontainer.json&location=WestUs2)
-[![Open in Remote - Containers](https://img.shields.io/static/v1?style=for-the-badge&label=Remote%20-%20Containers&message=Open&color=blue&logo=visualstudiocode)](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/azure-samples/azure-search-openai-demo)
+[![Open in Dev Containers](https://img.shields.io/static/v1?style=for-the-badge&label=Dev%20Containers&message=Open&color=blue&logo=visualstudiocode)](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/azure-samples/azure-search-openai-demo)
 
 This sample demonstrates a few approaches for creating ChatGPT-like experiences over your own data using the Retrieval Augmented Generation pattern. It uses Azure OpenAI Service to access the ChatGPT model (gpt-35-turbo), and Azure Cognitive Search for data indexing and retrieval.
 
@@ -49,8 +68,10 @@ The repo includes sample data so it's ready to try end to end. In this sample ap
 **IMPORTANT:** In order to deploy and run this example, you'll need:
 
 * **Azure account**. If you're new to Azure, [get an Azure account for free](https://azure.microsoft.com/free/cognitive-search/) and you'll get some free Azure credits to get started.
-* **Azure subscription with access enabled for the Azure OpenAI service**. You can request access with [this form](https://aka.ms/oaiapply).
-* **Azure account permissions**: Your Azure account must have `Microsoft.Authorization/roleAssignments/write` permissions, such as [Role Based Access Control Administrator](https://learn.microsoft.com/azure/role-based-access-control/built-in-roles#role-based-access-control-administrator-preview), [User Access Administrator](https://learn.microsoft.com/azure/role-based-access-control/built-in-roles#user-access-administrator), or [Owner](https://learn.microsoft.com/azure/role-based-access-control/built-in-roles#owner).
+* **Azure subscription with access enabled for the Azure OpenAI service**. You can request access with [this form](https://aka.ms/oaiapply). If your access request to Azure OpenAI service doesn't match the [acceptance criteria](https://learn.microsoft.com/legal/cognitive-services/openai/limited-access?context=%2Fazure%2Fcognitive-services%2Fopenai%2Fcontext%2Fcontext), you can use [OpenAI public API](https://platform.openai.com/docs/api-reference/introduction) instead. Learn [how to switch to an OpenAI instance](#switching-from-an-azure-openai-endpoint-to-an-openai-instance).
+* **Azure account permissions**:
+  * Your Azure account must have `Microsoft.Authorization/roleAssignments/write` permissions, such as [Role Based Access Control Administrator](https://learn.microsoft.com/azure/role-based-access-control/built-in-roles#role-based-access-control-administrator-preview), [User Access Administrator](https://learn.microsoft.com/azure/role-based-access-control/built-in-roles#user-access-administrator), or [Owner](https://learn.microsoft.com/azure/role-based-access-control/built-in-roles#owner). If you don't have subscription-level permissions, you must be granted [RBAC](https://learn.microsoft.com/azure/role-based-access-control/built-in-roles#role-based-access-control-administrator-preview) for an existing resource group and [deploy to that existing group](#existing-resource-group).
+  * Your Azure account also needs `Microsoft.Resources/deployments/write` permissions on the subscription level.
 
 ## Azure deployment
 
@@ -66,7 +87,7 @@ However, you can try the [Azure pricing calculator](https://azure.com/e/8ffbe5b1
 - Azure Blob Storage: Standard tier with ZRS (Zone-redundant storage). Pricing per storage and read operations. [Pricing](https://azure.microsoft.com/pricing/details/storage/blobs/)
 - Azure Monitor: Pay-as-you-go tier. Costs based on data ingested. [Pricing](https://azure.microsoft.com/pricing/details/monitor/)
 
-To reduce costs, you can switch to free SKUs for Azure App Service, Azure Cognitive Search, and Form Recognizer by changing the parameters file under the `infra` folder. There are some limits to consider; for example, you can have up to 1 free Cognitive Search resource per subscription, and the free Form Recognizer resource only analyzes the first 2 pages of each document. You can also reduce costs associated with the Form Recognizer by reducing the number of documents in the `data` folder, or by removing the postprovision hook in `azure.yaml` that runs the `prepdocs.py` script.
+To reduce costs, you can switch to free SKUs for Azure App Service and Form Recognizer by changing the parameters file under the `infra` folder. There are some limits to consider; for example, the free Form Recognizer resource only analyzes the first 2 pages of each document. You can also reduce costs associated with the Form Recognizer by reducing the number of documents in the `data` folder, or by removing the postprovision hook in `azure.yaml` that runs the `prepdocs.py` script.
 
 ⚠️ To avoid unnecessary costs, remember to take down your app if it's no longer in use,
 either by deleting the resource group in the Portal or running `azd down`.
@@ -83,18 +104,23 @@ You can run this repo virtually by using GitHub Codespaces, which will open a we
 
 [![Open in GitHub Codespaces](https://img.shields.io/static/v1?style=for-the-badge&label=GitHub+Codespaces&message=Open&color=brightgreen&logo=github)](https://github.com/codespaces/new?hide_repo_select=true&ref=main&repo=599293758&machine=standardLinux32gb&devcontainer_path=.devcontainer%2Fdevcontainer.json&location=WestUs2)
 
-#### VS Code Remote Containers
+#### VS Code Dev Containers
 
-A related option is VS Code Remote Containers, which will open the project in your local VS Code using the [Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers):
+A related option is VS Code Dev Containers, which will open the project in your local VS Code using the [Dev Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers):
 
-[![Open in Remote - Containers](https://img.shields.io/static/v1?style=for-the-badge&label=Remote%20-%20Containers&message=Open&color=blue&logo=visualstudiocode)](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/azure-samples/azure-search-openai-demo)
+1. Start Docker Desktop (install it if not already installed)
+1. Open the project:
+    [![Open in Dev Containers](https://img.shields.io/static/v1?style=for-the-badge&label=Dev%20Containers&message=Open&color=blue&logo=visualstudiocode)](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/azure-samples/azure-search-openai-demo)
+1. In the VS Code window that opens, once the project files show up (this may take several minutes), open a terminal window
+1. Run `azd auth login`
+1. Now you can follow the instructions in [Deploying from scratch](#deploying-from-scratch) below
 
 #### Local environment
 
 First install the required tools:
 
 * [Azure Developer CLI](https://aka.ms/azure-dev/install)
-* [Python 3.9+](https://www.python.org/downloads/)
+* [Python 3.9, 3.10, or 3.11](https://www.python.org/downloads/)
   * **Important**: Python and the pip package manager must be in the path in Windows for the setup scripts to work.
   * **Important**: Ensure you can run `python --version` from console. On Ubuntu, you might need to run `sudo apt install python-is-python3` to link `python` to `python3`.
 * [Node.js 14+](https://nodejs.org/en/download/)
@@ -114,6 +140,7 @@ Then bring down the project code:
 Execute the following command, if you don't have any pre-existing Azure services and want to start from a fresh deployment.
 
 1. Run `azd up` - This will provision Azure resources and deploy this sample to those resources, including building the search index based on the files found in the `./data` folder.
+    * **Important**: Beware that the resources created by this command will incur immediate costs, primarily from the Cognitive Search resource. These resources may accrue costs even if you interrupt the command before it is fully executed. You can run `azd down` or delete the resources manually to avoid unnecessary spending.
     * You will be prompted to select two locations, one for the majority of resources and one for the OpenAI resource, which is currently a short list. That location list is based on the [OpenAI model availability table](https://learn.microsoft.com/azure/cognitive-services/openai/concepts/models#model-summary-table-and-region-availability) and may become outdated as availability changes.
 1. After the application has been successfully deployed you will see a URL printed to the console.  Click that URL to interact with the application in your browser.
 It will look like the following:
@@ -126,12 +153,35 @@ It will look like the following:
 
 If you already have existing Azure resources, you can re-use those by setting `azd` environment values.
 
+#### Existing resource group
+
+1. Run `azd env set AZURE_RESOURCE_GROUP {Name of existing resource group}`
+1. Run `azd env set AZURE_LOCATION {Location of existing resource group}`
+
 #### Existing OpenAI resource
+
+##### Azure OpenAI:
 
 1. Run `azd env set AZURE_OPENAI_SERVICE {Name of existing OpenAI service}`
 1. Run `azd env set AZURE_OPENAI_RESOURCE_GROUP {Name of existing resource group that OpenAI service is provisioned to}`
 1. Run `azd env set AZURE_OPENAI_CHATGPT_DEPLOYMENT {Name of existing ChatGPT deployment}`. Only needed if your ChatGPT deployment is not the default 'chat'.
 1. Run `azd env set AZURE_OPENAI_EMB_DEPLOYMENT {Name of existing GPT embedding deployment}`. Only needed if your embeddings deployment is not the default 'embedding'.
+
+When you run `azd up` after and are prompted to select a value for `openAiResourceGroupLocation`, make sure to select the same location as the existing OpenAI resource group.
+
+##### Openai.com OpenAI:
+
+1. Run `azd env set OPENAI_HOST openai`
+2. Run `azd env set OPENAI_ORGANIZATION {Your OpenAI organization}`
+3. Run `azd env set OPENAI_API_KEY {Your OpenAI API key}`
+4. Run `azd up`
+
+You can retrieve your OpenAI key by checking [your user page](https://platform.openai.com/account/api-keys) and your organization by navigating to [your organization page](https://platform.openai.com/account/org-settings).
+Learn more about creating an OpenAI free trial at [this link](https://openai.com/pricing).
+Do *not* check your key into source control.
+
+When you run `azd up` after and are prompted to select a value for `openAiResourceGroupLocation`, you can select any location as it will not be used.
+
 
 #### Existing Azure Cognitive Search resource
 
@@ -139,7 +189,14 @@ If you already have existing Azure resources, you can re-use those by setting `a
 1. Run `azd env set AZURE_SEARCH_SERVICE_RESOURCE_GROUP {Name of existing resource group with ACS service}`
 1. If that resource group is in a different location than the one you'll pick for the `azd up` step,
   then run `azd env set AZURE_SEARCH_SERVICE_LOCATION {Location of existing service}`
-1. If the search service's SKU is not standard, then run `azd env set AZURE_SEARCH_SERVICE_SKU {Name of SKU}`. ([See possible values](https://learn.microsoft.com/en-us/azure/templates/microsoft.search/searchservices?pivots=deployment-language-bicep#sku))
+1. If the search service's SKU is not standard, then run `azd env set AZURE_SEARCH_SERVICE_SKU {Name of SKU}`. The free tier won't work as it doesn't support managed identity. ([See other possible values](https://learn.microsoft.com/azure/templates/microsoft.search/searchservices?pivots=deployment-language-bicep#sku))
+1. If you have an existing index that is set up with all the expected fields, then run `azd env set AZURE_SEARCH_INDEX {Name of existing index}`. Otherwise, the `azd up` command will create a new index.
+
+You can also customize the search service (new or existing) for non-English searches:
+
+1. To configure the language of the search query to a value other than "en-us", run `azd env set AZURE_SEARCH_QUERY_LANGUAGE {Name of query language}`. ([See other possible values](https://learn.microsoft.com/python/api/azure-search-documents/azure.search.documents.models.querylanguage?view=azure-python-preview))
+1. To turn off the spell checker, run `azd env set AZURE_SEARCH_QUERY_SPELLER none`. ([See other possible values](https://learn.microsoft.com/python/api/azure-search-documents/azure.search.documents.models.queryspellertype?view=azure-python-preview))
+1. To configure the name of the analyzer to use for a searchable text field to a value other than "en.microsoft", run `azd env set AZURE_SEARCH_ANALYZER_NAME {Name of analyzer name}`. ([See other possible values](https://learn.microsoft.com/dotnet/api/microsoft.azure.search.models.field.analyzer?view=azure-dotnet-legacy&viewFallbackFrom=azure-dotnet))
 
 #### Other existing Azure resources
 
@@ -196,6 +253,23 @@ By default, the deployed Azure web app will have no authentication or access res
 
 To then limit access to a specific set of users or groups, you can follow the steps from [Restrict your Azure AD app to a set of users](https://learn.microsoft.com/azure/active-directory/develop/howto-restrict-your-app-to-a-set-of-users) by changing "Assignment Required?" option under the Enterprise Application, and then assigning users/groups access.  Users not granted explicit access will receive the error message -AADSTS50105: Your administrator has configured the application <app_name> to block users unless they are specifically granted ('assigned') access to the application.-
 
+### Enabling login and document level access control
+
+By default, the deployed Azure web app allows users to chat with all your indexed data. You can enable an optional login system using Azure Active Directory to restrict access to indexed data based on the logged in user. Enable the optional login and document level access control system by following [this guide](./LoginAndAclSetup.md).
+
+### Enabling CORS for an alternate frontend
+
+By default, the deployed Azure web app will only allow requests from the same origin.  To enable CORS for a frontend hosted on a different origin, run:
+
+1. Run `azd env set ALLOWED_ORIGIN https://<your-domain.com>`
+2. Run `azd up`
+
+For the frontend code, change `BACKEND_URI` in `api.ts` to point at the deployed backend URL, so that all fetch requests will be sent to the deployed backend.
+
+For an alternate frontend that's written in Web Components and deployed to Static Web Apps, check out
+[azure-search-openai-javascript](https://github.com/Azure-Samples/azure-search-openai-javascript) and its guide
+on [using a different backend](https://github.com/Azure-Samples/azure-search-openai-javascript#using-a-different-backend).
+
 ## Running locally
 
 You can only run locally **after** having successfully run the `azd up` command. If you haven't yet, follow the steps in [Azure deployment](#azure-deployment) above.
@@ -215,49 +289,32 @@ Once in the web app:
 * Explore citations and sources
 * Click on "settings" to try different options, tweak prompts, etc.
 
+## Customizing the UI and data
+
+Once you successfully deploy the app, you can start customizing it for your needs: changing the text, tweaking the prompts, and replacing the data. Consult the [app customization guide](docs/customization.md) as well as the [data ingestion guide](docs/data_ingestion.md) for more details.
+
 ## Productionizing
 
 This sample is designed to be a starting point for your own production application,
 but you should do a thorough review of the security and performance before deploying
-to production. Here are some things to consider:
-
-* **OpenAI Capacity**: The default TPM (tokens per minute) is set to 30K. That is equivalent
-  to approximately 30 conversations per minute (assuming 1K per user message/response).
-  You can increase the capacity by changing the `chatGptDeploymentCapacity` and `embeddingDeploymentCapacity`
-  parameters in `infra/main.bicep` to your account's maximum capacity.
-  You can also view the Quotas tab in [Azure OpenAI studio](https://oai.azure.com/)
-  to understand how much capacity you have.
-* **Azure Storage**: The default storage account uses the `Standard_LRS` SKU.
-  To improve your resiliency, we recommend using `Standard_ZRS` for production deployments,
-  which you can specify using the `sku` property under the `storage` module in `infra/main.bicep`.
-* **Azure Cognitive Search**: The default search service uses the `Standard` SKU
-  with the free semantic search option, which gives you 1000 free queries a month.
-  Assuming your app will experience more than 1000 questions, you should either change `semanticSearch`
-  to "standard" or disable semantic search entirely in the `/app/backend/approaches` files.
-  If you see errors about search service capacity being exceeded, you may find it helpful to increase
-  the number of replicas by changing `replicaCount` in `infra/core/search/search-services.bicep`
-  or manually scaling it from the Azure Portal.
-* **Azure App Service**: The default app service plan uses the `Basic` SKU with 1 CPU core and 1.75 GB RAM.
-  We recommend using a Premium level SKU, starting with 1 CPU core.
-  You can use auto-scaling rules or scheduled scaling rules,
-  and scale up the maximum/minimum based on load.
-* **Authentication**: By default, the deployed app is publicly accessible.
-  We recommend restricting access to authenticated users.
-  See [Enabling authentication](#enabling-authentication) above for how to enable authentication.
-* **Networking**: We recommend deploying inside a Virtual Network. If the app is only for
-  internal enterprise use, use a private DNS zone. Also consider using Azure API Management (APIM)
-  for firewalls and other forms of protection.
-  For more details, read [Azure OpenAI Landing Zone reference architecture](https://techcommunity.microsoft.com/t5/azure-architecture-blog/azure-openai-landing-zone-reference-architecture/ba-p/3882102).
-* **Loadtesting**: We recommend running a loadtest for your expected number of users.
-  You can use the [locust tool](https://docs.locust.io/) with the `locustfile.py` in this sample
-  or set up a loadtest with Azure Load Testing.
-
+to production. Read through our [productionizing guide](docs/productionizing.md) for more details.
 
 ## Resources
 
 * [Revolutionize your Enterprise Data with ChatGPT: Next-gen Apps w/ Azure OpenAI and Cognitive Search](https://aka.ms/entgptsearchblog)
 * [Azure Cognitive Search](https://learn.microsoft.com/azure/search/search-what-is-azure-search)
 * [Azure OpenAI Service](https://learn.microsoft.com/azure/cognitive-services/openai/overview)
+* [Comparing Azure OpenAI and OpenAI](https://learn.microsoft.com/azure/cognitive-services/openai/overview#comparing-azure-openai-and-openai/)
+
+## Clean up
+
+To clean up all the resources created by this sample:
+
+1. Run `azd down`
+2. When asked if you are sure you want to continue, enter `y`
+3. When asked if you want to permanently delete the resources, enter `y`
+
+The resource group and all the resources will be deleted.
 
 ### Note
 
@@ -265,19 +322,7 @@ to production. Here are some things to consider:
 
 ### FAQ
 
-<details>
-<summary>Why do we need to break up the PDFs into chunks when Azure Cognitive Search supports searching large documents?</summary>
-
-Chunking allows us to limit the amount of information we send to OpenAI due to token limits. By breaking up the content, it allows us to easily find potential chunks of text that we can inject into OpenAI. The method of chunking we use leverages a sliding window of text such that sentences that end one chunk will start the next. This allows us to reduce the chance of losing the context of the text.
-</details>
-
-<details>
-<summary>How can we upload additional PDFs without redeploying everything?</summary>
-
-To upload more PDFs, put them in the data/ folder and run `./scripts/prepdocs.sh` or `./scripts/prepdocs.ps1`. To avoid reuploading existing docs, move them out of the data folder. You could also implement checks to see whats been uploaded before; our code doesn't yet have such checks.
-</details>
-
-<details>
+<details><a id="compare-samples"></a>
 <summary>How does this sample compare to other Chat with Your Data samples?</summary>
 
 Another popular repository for this use case is here:
@@ -290,32 +335,33 @@ The primary differences:
 * This repository includes multiple RAG (retrieval-augmented generation) approaches that chain the results of multiple API calls (to Azure OpenAI and ACS) together in different ways. The other repository uses only the built-in data sources option for the ChatCompletions API, which uses a RAG approach on the specified ACS index. That should work for most uses, but if you needed more flexibility, this sample may be a better option.
 * This repository is also a bit more experimental in other ways, since it's not tied to the Azure OpenAI Studio like the other repository.
 
+Feature comparison:
+
+| Feature | azure-search-openai-demo | sample-app-aoai-chatGPT |
+| --- | --- | --- |
+| RAG approach | Multiple approaches | Only via ChatCompletion API data_sources |
+| Vector support | ✅ Yes | ✅ Yes |
+| Data ingestion | ✅ Yes (PDF) | ✅ Yes (PDF, TXT, MD, HTML) |
+| Persistent chat history | ❌ No (browser tab only) | ✅ Yes, in CosmosDB |
+
+Technology comparison:
+
+| Tech | azure-search-openai-demo | sample-app-aoai-chatGPT |
+| --- | --- | --- |
+| Frontend | React | React |
+| Backend | Python (Quart) | Python (Flask) |
+| Vector DB | Azure Cognitive Search | Azure Cognitive Search |
+| Deployment | Azure Developer CLI (azd) | Azure Portal, az, azd |
+
 </details>
 
-<details>
+<details><a id="switch-gpt4"></a>
 <summary>How do you use GPT-4 with this sample?</summary>
 
 In `infra/main.bicep`, change `chatGptModelName` to 'gpt-4' instead of 'gpt-35-turbo'. You may also need to adjust the capacity above that line depending on how much TPM your account is allowed.
 </details>
 
-<details>
-<summary>What is the difference between the Chat and Ask tabs?</summary>
-
-The chat tab uses the approach programmed in [chatreadretrieveread.py](https://github.com/Azure-Samples/azure-search-openai-demo/blob/main/app/backend/approaches/chatreadretrieveread.py).
-
-- It uses the ChatGPT API to turn the user question into a good search query.
-- It queries Azure Cognitive Search for search results for that query (optionally using the vector embeddings for that query).
-- It then combines the search results and original user question, and asks ChatGPT API to answer the question based on the sources. It includes the last 4K of message history as well (or however many tokens are allowed by the deployed model).
-
-The ask tab uses the approach programmed in [retrievethenread.py](https://github.com/Azure-Samples/azure-search-openai-demo/blob/main/app/backend/approaches/retrievethenread.py).
-
-- It queries Azure Cognitive Search for search results for the user question (optionally using the vector embeddings for that question).
-- It then combines the search results and user question, and asks ChatGPT API to answer the question based on the sources.
-
-There are also two other /ask approaches with a slightly different approach, but they aren't currently working due to [langchain compatibility issues](https://github.com/Azure-Samples/azure-search-openai-demo/issues/541).
-</details>
-
-<details>
+<details><a id="azd-up-explanation"></a>
 <summary>What does the `azd up` command do?</summary>
 
 The `azd up` command comes from the [Azure Developer CLI](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/overview), and takes care of both provisioning the Azure resources and deploying code to the selected Azure hosts.
@@ -329,7 +375,7 @@ Finally, it looks at `azure.yaml` to determine the Azure host (appservice, in th
 Related commands are `azd provision` for just provisioning (if infra files change) and `azd deploy` for just deploying updated app code.
 </details>
 
-<details>
+<details><a id="appservice-logs"></a>
 <summary>How can we view logs from the App Service app?</summary>
 
 You can view production logs in the Portal using either the Log stream or by downloading the default_docker.log file from Advanced tools.
@@ -337,17 +383,17 @@ You can view production logs in the Portal using either the Log stream or by dow
 The following line of code in `app/backend/app.py` configures the logging level:
 
 ```python
-logging.basicConfig(level=os.getenv("APP_LOG_LEVEL", "ERROR"))
+logging.basicConfig(level=os.getenv("APP_LOG_LEVEL", default_level))
 ```
 
-To change the default level, you can set the `APP_LOG_LEVEL` environment variable locally or in App Service
+To change the default level, either change `default_level` or set the `APP_LOG_LEVEL` environment variable
 to one of the [allowed log levels](https://docs.python.org/3/library/logging.html#logging-levels):
 `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`.
 
 If you need to log in a route handler, use the the global variable `current_app`'s logger:
 
 ```python
-async def chat_stream():
+async def chat():
     current_app.logger.info("Received /chat request")
 ```
 
